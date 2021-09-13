@@ -3,8 +3,8 @@
 ## 스터디 소개
 
     Real MySQL의 핵심 내용을 읽고 정리한 스터디 입니다.
-     * 참여자: m3252,SujungRim,yun,GuenhoHong
-     * 기간: 2021.09.13 ~
+     * 참여자: m3252,SujungRim,YunNote,GuenhoHong
+     * 기간: 2021.09.12 ~
 
 ### 인덱스
 
