@@ -88,7 +88,242 @@ SELECT * FROM employees;
 
 ### 9.2.2 병렬 처리
 
+---
+
+> innodb_parallel_read_threads 시스템 변수를 이용해 하나의 쿼리에 최대 몇 개의 스레드를 이용해서 처리할지를 변경할 수 있다.
+
++ WHERE 조건 없이 단순히 테이블의 전체 건수를 가져오는 쿼리만 병렬처리 가능하다. (순차 I/O)
++ 스레드의 개수는 CPU 코어의 개수를 넘지 않도록 한다. 
+
+```SQL
+SET SESSION innodb_parallel_read_threads = 2;
+SELECT COUNT(*) FROM tb;
+
+SET SESSION innodb_parallel_read_threads = 4;
+SELECT COUNT(*) FROM tb;
+
+```
+
+<br>
+
+### 9.2.3 ORDER BY 처리 (using filesort)
+
+---
 
 
+#### 인덱스를 활용한 정렬
+
+##### 장점
+     INSERT, UPDATE, DELETE 쿼리가 실행될 때 이미 정렬된 인덱스를 순서대로 읽기만 하면 되므로 매우 빠르다.
+##### 단점
+     INSERT, UPDATE, DELETE 작업 시 부가적인 인덱스 추가/삭제 작업이 필요하다.
+     인덱스 때문에 디스크 공간이 더 필요하다.
+     인덱스의 개수가 늘어날수록 InnoDB 버퍼 풀을 위한 메모리가 더 필요하다.
+
+<br> 
+
+#### Filesort 를 이용한 정렬
+
+##### 장점
+     인덱스를 생성하지 않아도 되므로 인덱스를 활용한 정렬에 단점이 장점으로 바뀐다.
+     정렬해야 할 레코드가 많지 않으면 메모리에서 Filesort 가 처리되므로 빠르다.
+##### 단점
+     정렬 작업이 쿼리 실행 시 처리되므로 레코드 대상 건수가 많아질수록 쿼리의 응답 속도가 느리다.
+
+#### 사례
++ 정렬 기준이 너무 많아서 요건별로 모두 인덱스를 생성하는 것이 불가능한 경우
++ GROUP BY 의 결과 또는 DISTINCT 같은 처리의 결과를 정렬해야 하는 경우
++ UNION 의 결과와 같이 임시 테이블의 결과를 다시 정렬해야 하는 경우
++ 랜덤하게 결과 레코드를 가져와야 하는 경우
+
+#### 적용확인
++ 실행 계획의 Extra 칼럼에 "Using filesort" 메세지가 표시되는지 여부
+    
+<br>
+
+ 
+#### 2.2.3.1 소트 버퍼
+
+---
+
+> MySQL 은 정렬을 수행하기 위해 별도의 메모리 공간을 할당 받는데, 이 메모리 공간을 <b> 소트 버퍼(Sort Buffer)</b> 라 부른다.
+>
+> 소트 버퍼는 정렬이 필요한 경우에만 할당되며, 버퍼의 크기는 정렬해야 할 레코드의 크기에 따라 가변적으로 증가하고, 최대 사용 가능한 소트 버퍼 공간은 sort_buffer_size 를 통해 설정할 수 있다.
 
 
+##### 레코드 건수가 소트 버퍼로 할당된 공간보다 큰 경우
+
+![](SortBuffer1.jpg)
+
++ 수행된 멀티 횟수는 Sort_merge_passes 상태변수에 누적해서 집계된다.
++ 소트 버퍼를 레코드 크기만큼 크게 설정 한다고 하여도 큰 차이가 없다.
++ 소프 버퍼의 크기가 256KB 에서 8MB 사이에서 최적의 성능을 보인다.
+    ![img_1.png](img_1.png)
+  
++ 정렬을 위해 할당하는 소트 버퍼는 세션 메모리 영역에 속한다. 즉, 여러 클라이언트가 공유해서 사용할 수 있는 영역이 아니다.
++ 소트 버퍼의 크기를 너무 크게 설정하면 (10MB 이상) 운영체재는 메모리 부족 현상을 겪을 수 있다.
+
+<br>
+
+#### 2.2.3.2 정렬 알고리즘
+
+---
+
+> 레코드를 정렬할 때 레코드 전체를 소트 버퍼에 담을지 또는 정렬 기준 컬럼만 소트 버퍼에 담을지에 따라 "싱글 패스" 와 "투 패스" 2가지 정렬 모드로 나눌 수 있다.
+
+```SQL
+-- 옵티마이저 트레이스 활성화
+SET OPTIMIZER_TRACE = "enabled=on", END_MARKERS_IN_JSON = on;
+SET OPTIMIZER_TRACE_MAX_MEM_SIZE = 1000000;
+
+-- 쿼리 실행
+SELECT * FROM employees ORDER BY last_name LIMIT 100000, 1;
+
+-- 트레이스 내용 확인
+SELECT * FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE \G 
+... 
+
+
+'{
+  "steps": [
+    {
+      "join_preparation": {
+        "select#": 1,
+        "steps": [
+          {
+            "expanded_query": "/* select#1 */ select `hospital`.`id` AS `id`,`hospital`.`name` AS `name` from `hospital` order by `hospital`.`name` limit 100000,1"
+          }
+        ] /* steps */
+      } /* join_preparation */
+    },
+    {
+      "join_optimization": {
+        "select#": 1,
+        "steps": [
+          {
+            "substitute_generated_columns": {
+            } /* substitute_generated_columns */
+          },
+          {
+            "table_dependencies": [
+              {
+                "table": "`hospital`",
+                "row_may_be_null": false,
+                "map_bit": 0,
+                "depends_on_map_bits": [
+                ] /* depends_on_map_bits */
+              }
+            ] /* table_dependencies */
+          },
+          {
+            "rows_estimation": [
+              {
+                "table": "`hospital`",
+                "table_scan": {
+                  "rows": 32,
+                  "cost": 1
+                } /* table_scan */
+              }
+            ] /* rows_estimation */
+          },
+          {
+            "considered_execution_plans": [
+              {
+                "plan_prefix": [
+                ] /* plan_prefix */,
+                "table": "`hospital`",
+                "best_access_path": {
+                  "considered_access_paths": [
+                    {
+                      "rows_to_scan": 32,
+                      "access_type": "scan",
+                      "resulting_rows": 32,
+                      "cost": 7.4,
+                      "chosen": true,
+                      "use_tmp_table": true
+                    }
+                  ] /* considered_access_paths */
+                } /* best_access_path */,
+                "condition_filtering_pct": 100,
+                "rows_for_plan": 32,
+                "cost_for_plan": 7.4,
+                "sort_cost": 32,
+                "new_cost_for_plan": 39.4,
+                "chosen": true
+              }
+            ] /* considered_execution_plans */
+          },
+          {
+            "attaching_conditions_to_tables": {
+              "original_condition": null,
+              "attached_conditions_computation": [
+              ] /* attached_conditions_computation */,
+              "attached_conditions_summary": [
+                {
+                  "table": "`hospital`",
+                  "attached": null
+                }
+              ] /* attached_conditions_summary */
+            } /* attaching_conditions_to_tables */
+          },
+          {
+            "clause_processing": {
+              "clause": "ORDER BY",
+              "original_clause": "`hospital`.`name`",
+              "items": [
+                {
+                  "item": "`hospital`.`name`"
+                }
+              ] /* items */,
+              "resulting_clause_is_simple": true,
+              "resulting_clause": "`hospital`.`name`"
+            } /* clause_processing */
+          },
+          {
+            "refine_plan": [
+              {
+                "table": "`hospital`"
+              }
+            ] /* refine_plan */
+          }
+        ] /* steps */
+      } /* join_optimization */
+    },
+    {
+      "join_execution": {
+        "select#": 1,
+        "steps": [
+          {
+            "filesort_information": [
+              {
+                "direction": "asc",
+                "table": "`hospital`",
+                "field": "name"
+              }
+            ] /* filesort_information */,
+            "filesort_priority_queue_optimization": {
+              "limit": 100001,
+              "rows_estimate": 1092,
+              "row_size": 520,
+              "memory_available": 262144
+            } /* filesort_priority_queue_optimization */,
+            "filesort_execution": [
+            ] /* filesort_execution */,
+            "filesort_summary": {
+              "rows": 32,
+              "examined_rows": 32,
+              "number_of_tmp_files": 0,
+              "sort_buffer_size": 261888,
+              "sort_mode": "<sort_key, rowid>"
+            } /* filesort_summary */
+          }
+        ] /* steps */
+      } /* join_execution */
+    }
+  ] /* steps */
+}'
+
+```
++ 출력 내용에서 filesort_summary 섹션의 sort_algorithm 필드에 정렬 알고리즘이 표시된다.
++ sort_mod 필드에는 "<fixed"
+<br>
