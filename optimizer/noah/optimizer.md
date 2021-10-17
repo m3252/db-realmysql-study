@@ -186,109 +186,7 @@ SELECT * FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE \G
 
 '{
   "steps": [
-    {
-      "join_preparation": {
-        "select#": 1,
-        "steps": [
-          {
-            "expanded_query": "/* select#1 */ select `hospital`.`id` AS `id`,`hospital`.`name` AS `name` from `hospital` order by `hospital`.`name` limit 100000,1"
-          }
-        ] /* steps */
-      } /* join_preparation */
-    },
-    {
-      "join_optimization": {
-        "select#": 1,
-        "steps": [
-          {
-            "substitute_generated_columns": {
-            } /* substitute_generated_columns */
-          },
-          {
-            "table_dependencies": [
-              {
-                "table": "`hospital`",
-                "row_may_be_null": false,
-                "map_bit": 0,
-                "depends_on_map_bits": [
-                ] /* depends_on_map_bits */
-              }
-            ] /* table_dependencies */
-          },
-          {
-            "rows_estimation": [
-              {
-                "table": "`hospital`",
-                "table_scan": {
-                  "rows": 32,
-                  "cost": 1
-                } /* table_scan */
-              }
-            ] /* rows_estimation */
-          },
-          {
-            "considered_execution_plans": [
-              {
-                "plan_prefix": [
-                ] /* plan_prefix */,
-                "table": "`hospital`",
-                "best_access_path": {
-                  "considered_access_paths": [
-                    {
-                      "rows_to_scan": 32,
-                      "access_type": "scan",
-                      "resulting_rows": 32,
-                      "cost": 7.4,
-                      "chosen": true,
-                      "use_tmp_table": true
-                    }
-                  ] /* considered_access_paths */
-                } /* best_access_path */,
-                "condition_filtering_pct": 100,
-                "rows_for_plan": 32,
-                "cost_for_plan": 7.4,
-                "sort_cost": 32,
-                "new_cost_for_plan": 39.4,
-                "chosen": true
-              }
-            ] /* considered_execution_plans */
-          },
-          {
-            "attaching_conditions_to_tables": {
-              "original_condition": null,
-              "attached_conditions_computation": [
-              ] /* attached_conditions_computation */,
-              "attached_conditions_summary": [
-                {
-                  "table": "`hospital`",
-                  "attached": null
-                }
-              ] /* attached_conditions_summary */
-            } /* attaching_conditions_to_tables */
-          },
-          {
-            "clause_processing": {
-              "clause": "ORDER BY",
-              "original_clause": "`hospital`.`name`",
-              "items": [
-                {
-                  "item": "`hospital`.`name`"
-                }
-              ] /* items */,
-              "resulting_clause_is_simple": true,
-              "resulting_clause": "`hospital`.`name`"
-            } /* clause_processing */
-          },
-          {
-            "refine_plan": [
-              {
-                "table": "`hospital`"
-              }
-            ] /* refine_plan */
-          }
-        ] /* steps */
-      } /* join_optimization */
-    },
+    ....
     {
       "join_execution": {
         "select#": 1,
@@ -323,7 +221,143 @@ SELECT * FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE \G
   ] /* steps */
 }'
 
+// 출력 내용에서 filesort_summary 섹션의 sort_algorithm 필드에 정렬 알고리즘이 표시된다.
+
 ```
-+ 출력 내용에서 filesort_summary 섹션의 sort_algorithm 필드에 정렬 알고리즘이 표시된다.
-+ sort_mod 필드에는 "<fixed"
++ <sort_key, rowid> : 정렬 키와 레코드의 로우 아이디(Row ID)만 가져와서 정렬하는 방식
++ <sort_key, additional_fields> : 정렬 키와 레코드 전체를 가져와서 정렬하는 방식으로, 레코드의 칼럼들은 고정 사이즈로 메모리 저장
++ <sort_key, packed_additional_fields> : 정렬 키와 레코드 전체를 가져와서 정렬하는 방식으로, 레코드의 컬럼들은 가변 사이즈로 메모리 저장
+
+
+##### 2.2.3.2.1 싱글 패스 정렬 방식
+
+```SQL
+SELECT emp_no, first_name, last_name FROM employees
+ORDER BY first_name;
+```
+
+![](KakaoTalk_Photo_2021-10-17-13-17-10.jpeg)
+
++ 정렬에 필요하지 않은 last_name 까지 전부 읽어서 소트 버퍼에 담고 정렬을 수행한다.
++ 투 패스 방식보다 더 많은 소트 버퍼 공간이 필요하다. 
+
+##### 2.2.3.2.1 투 패스 정렬 방식
+
++ 정렬 대상과 프라이머리 키 값만 소트 버퍼에 담아서 정렬을 수행한다.
++ 정렬이 완료되면 테이블을 한 번 더 읽어서 last_name 을 가져온다.
++ 불합리가 발생한다. (테이블을 한 번 더 읽는 부분 - 더 많은 I/O 발생)
+
+##### 싱글 패스 vs 투 패스
+
++ 레코드의 크기가 max_length_for_sort_date 변수에 설정된 값보다 클 때 투 패스 정렬 방식이 적용된다.
++ BLOB 이나 TEXT 타입의 컬럼이 SELECT 대상에 포함될 떄 투 패스 정렬 방식이 적용된다.
++ 정렬 대상 레코드의 크기나 건수가 작은 경우 싱글 패를, 큰 경우 투 패스 정렬이 효율적이다.
+
+<br>
+
+#### 2.2.3.3 정렬 처리 방법
+
+--- 
+
+> 옵티마이저는 효율적인 정렬 처리를 위해 인덱스를 이용할 수 있는지 검토하고 인덱스를 이용할 수 없다면 WHERE 조건에 일치하는 레코드를 검색해 정렬 버퍼에 저장하면서 정렬을 처리 (file sort) 할 것이다.
+> 
+> 이때 옵티마이저는 정렬 대상 레코드를 최소화하기 위해 2가지 방법 중 하나를 선택한다.
+> + 조인의 드라이빙 테이블만 정렬한 다음 조인을 수행
+> + 조인이 끝나고 일치하는 레코드를 모두 가져온 후 정렬을 수행
+
+|정렬 처리 방법|실행 계획의 Extra 컬럼 내용|속도|
+|:---:|:---:|:---:|
+|인덱스를 사용한 정렬|별도 표기 없음|빠름|
+|조인에서 드라이빙 테이블만 정렬|"Using filesort"|중간|
+|조인에서 조인 결과를 임시 테이블로 저장 후 정렬|"Using temporary; Using filesort"|늦음|
+
+
+##### 2.2.3.3.1 인덱스를 이용한 정렬
+
+###### 인덱스 정렬을 사용하기 위한 조건
+
+1. ORDER BY 에 명시된 컬럼이 제일 먼저 읽는 테이블 (조인이 사용된 경우 드라이빙 테이블) 에 속하고, ORDER BY 에 순서대로 생성된 인덱스가 있어야 한다.
+   ```SQL
+   SELECT * FROM employees e, salaries s
+   WHERE e.emp_no = s.emp_no
+   ORDER BY e.emp_no;
+   
+   인덱스가 정렬되어 있으므로 ORDER BY를 생략할 수 있지만, 성능상 차이가 없고 ORDER BY 를 명시하는 편이 추후 사이드 이펙트를 줄일 수 있다.
+   ```
+2. WHERE 절에 첫 번쨰로 읽는 테이블의 컬럼에 대한 조건이 있다면 그 조건과 ORDER BY 는 같은 인덱스를 사용할 수 있어야 한다.
+3. B-Tree 게열의 졍렬된 인덱스이거나 여러 테이블이 조인되는 경우 네스티드-루프(Nested-loop) 방식의 조인이여야 한다.
+
+<small>
+Nested-loop 란?
+
++ 2개 이상의 테이블에서 하나의 집합을 기준으로 순차적으로 상대방 Row 를 결합하여 원하는 결과를 조합하는 방식
++ 먼저 선행 테이블의 처리 범위를 하나씩 액세스하면서 추출된 값으로 연결할 테이블을 조인한다
+</small>
+  
+###### 인덱스 정렬이 불가능한 경우
++ 전문 검색 인덱스
++ 해시 인덱스
++ R-Tree 인덱스
+
+##### 2.2.3.3.2 조인의 드라이빙 테이블만 정렬
+
+> 일반적으로 조인이 수행되면 결과 레코드의 건수가 몇 배로 불어나고, 레코드 하나하나의 크기도 늘어난다. 그래서 조인을 실행하기 전에 첫 번째 테이블의 레코드를 먼저 정렬한 후 다음 조인을 하는 것이 차선책이 될 것이다.
+
+```SQL
+드라이빙 테이블의 컬럼만으로 ORDER BY 절을 작성됐다.
+
+SELECT * FROM employees e, salaries s
+WHERE e.emp_no = s.emp_no
+AND e.emp_no BETWEEN 100002 AND 100010
+ORDER BY e.last_name;
+```
+ 
+다음 2가지 조건을 갖추고 있기 때문에 옵티마이저는 employees 테이블을 드라빙 테이블로 선택한다.
++ WHERE 절의 BETWEEN 검색 조건은 employees 테이블의 프라이머리 키를 이용해 검색하면 작업량을 줄일 수 있다.
++ 드리븐 테이블(salaries)의 조인 컬럼인 emp_no 컬럼에 인덱스가 있다.
+
+과정 
+1. employees 에서 인덱스를 이용해 BETWEEN 조건을 만족하는 레코드 검색
+2. 검색한 결과를 last_name 컬럼으로 정렬을 수행 (file sort)
+3. 정렬된 결과를 순서대로 읽으면서 salaries 와 조인
+
+
+##### 2.2.3.3.3 임시 테이블을 이용한 정렬
+
+> 2개 이상의 테이블을 조인해서 그 결과를 정렬해야 한다면 임시 테이블 정렬이 필요할 수 있다.
+> 
+> 이 방법은 가운데 정렬해야 할 레코드 건수가 가장 많기 때문에 가장 느린 정렬 방법이다.
+
+```SQL
+드리븐 테이블의 컬럼이 ORDER BY 에 사용됐다.
+
+SELECT * FROM employees e, salaries s
+WHERE e.emp_no = s.emp_no
+AND e.emp_no BETWEEN 100002 AND 100010
+ORDER BY s.salary;
+```
+
+|id|table|type|key|Extra|
+|:---:|:---:|:---:|:---:|:---|
+|1|e|range|PRIMARY|"Using where; Using temporary; Using filesort"|
+|1|s|ref|PRIMARY|null|
+
+
+![](KakaoTalk_Image_2021-10-17-15-56-15.jpeg)
+
+##### 2.2.3.3.4 정렬 처리 방법의 성능 비교
+
+
+###### 2.2.3.3.4.1 스트리밍 방식
+
+> 서버 쪽에서 처리할 데이터가 얼마인지에 관계없이 조건에 일치하는 레코드가 검색될 때마다 즉시 클라이언트로 전송해주는 방식
+
+###### 2.2.3.3.4.2 버퍼링 방식
+
+> ORDER BY 나 GROUP BY 같은 처리는 쿼리의 결과가 스트리밍되는 것을 불가능하게 한다.
+> 
+> 결과를 모아서 MySQL 서버에서 일괄 가공하는 방식이다. 네트워크로 전송되는 레코드의 건수를 줄일 수는 있지만, MySQL 작업량이나 성능에는 그다지 변화가 없다.
+
+* JDBC 라이브러리는 MySQL 서버로부터 받는 레코드를 일단 내부 버퍼에 모두 담아둔다. (버퍼링 방식)   
+
 <br>
