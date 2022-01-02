@@ -260,8 +260,60 @@ d003:10001, d004:10001, d005:10001 만 검색
 | 날짜와 시간 연산 | DATE_ADD(), DATE_SUB() | 특정 날짜에서 연도나 월일 또는 시간 등을 더하거나 뺄 때 사용된다. 
 | 타임스탬프 연산 | UNIX_TIMESTAMP() | '1970-01-01 00:00:00' 으로부터 경과된 초의 수를 반환한다.
 | 타임스탬프 연산 | FROM_UNIXTIME() | '1970-01-01 00:00:00' 으로부터 경과된 DATETIME 을 반환한다.
+| 문자열 처리 | RPAD(), LPAD() | 좌측 또는 우측에 문자를 덧붙여서 지정된 길이의 문자열로 만드는 함수이다.
+| 문자열 처라 | RTRIM(), LTRIM(), TRIM() | RTRIM, LTRIM 은 우측 또는 좌측에 연속된 공백 문자를 제거하는 함수이고 TRIM()은 이 두가지를 동시에 수행하는 함수이다. 
+| 문자열 결합 | CONCAT() | 여러개의 문자열을 연결해서 하나의 문자열로 반환하는 함수로, 인자의 개수 제한이 없고 숫자 값을 인자로 전달하면 문자열로 자동 타입 변환 후 연결한다.
+| GROUP BY 문자열 결합 | (1) GROUP CONCAT() | COUNT(), MIN(), MAX(), AVG() 등과 같은 그룹 함수 중 하나다. 주로 GROUP BY 와 함께 사용하며, GROUP BY 가 없는 SQL 에서는 단 하나의 결괏값만 만들어낸다. 정렬(ORDER BY)이나 구분자 설정(SEPARATOR)도 가능하며, 중복 제거(DISTINCT) 도 가능하다.
+| 값의 비교와 대체 | CASE WHEN THEN END | 프로그래밍에 SWITCH 구문 같은 역할을 한다. 동등 비교 혹은 크거나 작다 비교와 같은 표현식이 사용된다. (조건을 통해 실행 횟수를 줄일 수 있다.)
+| 타입의 변환 | CAST(), CONVERT() | SQL 에 포함된 모든 입력값은 문자열처럼 취급된다. 일반적으로 문자열과 숫자, 날짜의 변환은 자동으로 필요한 형태로 변환하는 경우가 많지만 그렇지 않을 때 사용된다.
+| 이진값과 16진수 문자열 변환| HEX(), UNHEX() | HEX() 는 이진값을 사람이 읽을 수 있는 형태의 16진수의 문자열로 변환하고 UNHEX() 는 반대로 변환하는 함수이다.
+| 암호화 및 해시 함수 | MD5(), SHA(), SHA2() | 암복화 처리를 하기 위한 함수이다.
+| 처리 대기 | SLEEP() | 디버깅 용도나 쿼리의 실행 시간을 오랜 시간 유지하고자 할 경우 사용하는 함수이다.
+| 벤치마크 | BENCHMARK() | SLEEP() 함수와 같이 디버깅이나 간단한 함수의 성능 테스트용으로 유용한 함수이다. 이 함수의 반환 값은 중요하지 않으며, 단지 지정한 횟수만큼 반복 실행하는데 얼마나 시간이 소요됐는지가 중요하며, 내부 동작으론 이미 할당받은 메모리 자원까지 공유되고 메모리 할당도 1 회전에 대한 할당만 되기 떄문에 생각보다 짧은 시간안에 완료된다. (쿼리 파싱, 최적화, 테이블 잠금, 네트워크 비용 등이 최초에만 생성된다. )
+| IP 주소 변환 | INET_ATON(), INET_NTOA() | INET_ATON() 는 Ip 주소를 문자열이 아닌 부호 없는 정수 타입에 저장할 수 있게 제공하며, INET_NTOA() 는 정수형의 Ip 를 사람이 읽을 수 있는 형태로 반환한다.
+| JSON 포맷 | JSON_PRETTY() | MySQL 클라이언트에서 JSON 데이터의 기본적인 표시 방법은 단순 텍스트 포맷인데, 이 함수를 사용하면 알기 쉬운 포맷으로 변경해준다. 
+| JSON 필드 크기 | JSON_STORAGE_SIZE() | JSON 데이터는 텍스트 기반이지만 서버의 디스크 저장 공간을 절약하기 위해 JSON 데이터를 실제 디스크에 저장할때 BSON 포맷을 사용한다. BSON 으로 변환 됐을 때 저장 공간의 크기를 알기 위해 사용한다.
+| JSON 필드 추출 | JSON_EXTRACT() | JSON dom 에서 특정 필드의 값을 가져오는 방법은 여러 가지가 있지만 가장 일반적인 방법은 이 함수를 사용하는 것이다. ex) JSON_EXTRACT(JSON 칼럼명, 가져올 JSON Path) OR JSON 칼럼->$.가져올 JSON Path OR JSON 칼럼->>$.가져올 JSON Path
+| JSON 오브젝트 포함 여부 확인 | (2) JSON_CONTAINS() | JSON dom 또는 path 에서 JSON 필드를 포함한지 확인하는 함수이다. 
+| JSON 오브젝트 생성 | JSON_OBJECT() | RDBMS 칼럼의 값을 이용해 JSON 오브젝트를 생성하는 함수이다. ex) SELECT JSON_OBJECT("이름", first_name) FROM emp
+| JSON 칼럼으로 집계 | JSON_OBJECTAGG() & JSON_ARRAYAGG() | GROUP BY 절과 함께 사용되는 집계 함수로서 RDMS 컬럼들을 모아 JSON 배열 혹은 dom 을 생성하는 함수이다.
+| JSON 데이터를 테이블로 변환 | JSON_TABLE() | JSON 데이터의 값들을 모아서 RDBMS 테이블을 만들어 반환한다. 이때 JSON_TABLE() 함수가 만들어서 반환하는 테이블의 레코드 건수는 원본 테이블과 동일한 건수를 가진다. 이 함수는 항상 내부 임시 테이블을 이용하기 때문에 임시 테이블에 레코드가 많이 저장되지 않게 주의가 필요하다.
 
+#### (1) GROUP CONCAT()
+> GROUP CONCAT() 함수는 지정한 칼럼의 값들을 연결하기 위해 제한적인 메모리 버퍼 공간을 사용는데 쿼리의 결과가 지정된 버퍼 크기를 넘지 않도록 주의해야 한다.
 
++ MySQL 8.0 부터는 래터럴 조인이나 윈도우 함수를 이용할 수 있다.
+```SQL
+윈도우 함수를 이용해 최대 5개 부서만 GROUP_CONCAT 실행
 
+SELECT GROUP_CONCAT(dept_no ORDER BY dept_name DESC) 
+FROM (
+    SELECT *, RANK() OVER (ORDER BY dept_no) AS rnk
+    FROM departments
+) as x
+WHere rnk <= 5;
 
+래터럴 조인을 이용해 부서별로 10명씩만 GROUP_CONCAT 실행
+SELECT d.dept_no, GROUP_CONCAT(de2.emp_no)
+FROm departments d 
+LEFT JOIN LATERAL ( 
+    SELECT de.dept_no, de.emp_no
+    FROM dept_emp de 
+    WHERE de.dept_no = d.dept_no
+    ORDER BY de.emp_no ASC LIMIT 10
+) de2 ON de2.dept_no = d.dept_no 
 
+```
+
+#### (2) JSON_CONTAINS()
+```SQL
+SELECT emp_no FROM employee_docs
+WHERE JSON_CONTAINS(doc, '{"first_name" : "승찬"}');
+
+SELECT emp_no FROM employee_docs
+WHERE JSON_CONTAINS(doc, '"승찬"', '$.first_name');
+```
+
+---
+
+## 11.4 SELECT
