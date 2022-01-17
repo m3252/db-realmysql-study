@@ -400,3 +400,78 @@ WHERE COL_1 IN (1,2,3,4)  ORDER BY COL_2;
 출처 : Real Mysql8.0
 
 --- 
+
+### 11.4.3 WHERE 절의 비교 조건 사용 시 주의사항
+
+#### NULL 비교
+```SQL
+인덱스 사용
+
+WHERE to_date IS NULL;
+WHERE ISNULL(to_date);
+
+풀스캔 발생
+
+WHERE ISNULL(to_date)=1;
+WHERE ISNULL(to_date)=true;
+```
+
+#### 문자열이나 숫자 비교
+
+```SQL
+인덱스 가능
+
+WHERE 숫자 = 100;
+WHERE 문자 = '10';
+WHERE 숫자 = '100';
+
+인덱스 불가능
+
+WHERE 문자 = 10;
+```
+
+#### 날짜 비교
+
+DATE 또는 DATETIME 문자열 비교
+```SQL
+적절한 경우
+
+WHERE date > STR_TO_DATE('2022-07-23', '%Y-%m-%d');
+WHERE date > '2022-07-23';
+WHERE date > DATE_SUB('2022-07-23', INTERVAL 1 YEAR);
+
+적절하지 않은 경우
+
+WHERE DATE_FORMAT(date, '%Y-%m-%d') > '2022-07-23';
+WHERE DATE_add(date, INTERVAL 1 YEAR) > '2022-07-23';
+
+```
+
+#### DATETIME 과 TIMESTAMP 비교 생략
+
+#### Short-Circuit Evaluation
+- WHERE 조건절의 순서는 성능과 관련있다.
+- 빠르게 처리되는 부분을 우선순위에 두고 오래걸리는 부분은 후순위로 미룬다.
+
+---
+
+### 11.4.4 DISTINCT
+- 성능상으로 좋지 않다.
+- 의도한 바와 다른 쿼리 결과가 나올 수 있다.
+
+### 11.4.5 LIMIT n
+
+- 처리 순서
+  1. WHERE 절의 검색 조건에 일치하는 레코드를 전부 읽어온다.
+  2. 정렬한다.
+  3. Limit 만큼 반환한다.
+
+- 오라클과 다르게 항상 쿼리의 마지막에 실행된다.
+- 결과보다는 결과를 만드는 과정에서의 성능을 고려해야 한다.
+
+### 11.4.6 COUNT()
+
+- COUNT 쿼리에 ORDER BY 절은 어떤 경우에도 필요하지 않다.
+- COUNT(*) 로 사용해도 성능 문제가 없다.
+- LEFT JOIN 도 (결과 건수에 영향이 없는) 제거하는 편이 좋다.
+- () 에 *이 아닌 칼럼명을 넣으면 null 이 아닌 값을 가져오므로 주의하자.
